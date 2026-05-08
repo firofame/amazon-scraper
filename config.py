@@ -15,6 +15,8 @@ PARALLEL_PAGES = 2  # Concurrent browser pages for bulk verification
 # Extraction Settings
 MODEL_ID = "gemma-4-31b-it" 
 VISION_ENABLED = True  # Set to False to skip image analysis and save time/cost
+MAX_IMAGES_PER_PRODUCT = None # Set to None to download all available images
+SAVE_INTERVAL = 1 # Save progress to JSON after this many products
 
 # Amazon Selectors (Commonly reused)
 SELECTORS = {

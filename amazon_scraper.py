@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urljoin
 from browser_utils import get_browser_context
-from config import SELECTORS, TABLE_RULES, DATA_FILE, VISION_ENABLED, IMAGE_DIR
+from config import SELECTORS, TABLE_RULES, DATA_FILE, VISION_ENABLED, IMAGE_DIR, MAX_IMAGES_PER_PRODUCT, SAVE_INTERVAL
 from downloader import download_product_images
 from extractor import extract_label_from_images
 
@@ -97,7 +97,7 @@ async def extract_specs(page, product, index, total):
         product_image_dir = IMAGE_DIR / asin
         if VISION_ENABLED:
             print(f"  [{asin}] Downloading images...", end="", flush=True)
-            await download_product_images(page, url, max_images=5, image_dir=product_image_dir)
+            await download_product_images(page, url, max_images=MAX_IMAGES_PER_PRODUCT, image_dir=product_image_dir)
             print(" Done.", flush=True)
         else:
             await page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -170,9 +170,16 @@ async def main():
             for i, product in enumerate(to_scrape):
                 print(f"[{i+1}/{total}]", end="", flush=True)
                 await extract_specs(page, product, i + 1, total)
+                
+                # Save progress incrementally
+                if (i + 1) % SAVE_INTERVAL == 0:
+                    with open(DATA_FILE, "w") as f:
+                        json.dump(products, f, indent=4, ensure_ascii=False)
+                    print(f"  💾 Progress saved ({i+1}/{total})")
+                
                 await asyncio.sleep(1)
             
-            # Save back
+            # Final save
             with open(DATA_FILE, "w") as f:
                 json.dump(products, f, indent=4, ensure_ascii=False)
             print(f"\n✅ Updated {DATA_FILE.name}")
@@ -194,8 +201,8 @@ async def main():
         for i, product in enumerate(products):
             print(f"[{i+1}/{total}]", end="", flush=True)
             await extract_specs(page, product, i + 1, total)
-            # Save progress every 20 products
-            if (i + 1) % 20 == 0:
+            # Save progress incrementally
+            if (i + 1) % SAVE_INTERVAL == 0:
                 with open(DATA_FILE, "w") as f:
                     json.dump(products, f, indent=4, ensure_ascii=False)
                 print(f"  💾 Progress saved ({i+1}/{total})")
