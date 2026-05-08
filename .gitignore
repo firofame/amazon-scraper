@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Project Specific
+images/
+verified_labels/
+.camoufox-profile/
+.resume
+*.resume
+
+# Data
+amazon_products.json
+ac_list.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+auth.json
+*.key
