@@ -261,7 +261,7 @@ async def main():
     parser.add_argument("url", help="The Amazon product URL")
     args = parser.parse_args()
 
-    async with await get_browser_context() as context:
+    async with get_browser_context() as context:
         page = await context.new_page()
         await download_product_images(page, args.url)
 

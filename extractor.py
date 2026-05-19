@@ -1,13 +1,30 @@
+import itertools
 import os
 import sys
 import json
 import asyncio
 import re
+import threading
 from pathlib import Path
 from PIL import Image
 from google import genai
 from google.genai import types
 from config import MODEL_ID, IMAGE_DIR
+
+API_KEYS = [v for k, v in sorted(os.environ.items()) if k.startswith("GEMINI_API_KEY_")]
+if not API_KEYS:
+    key = os.environ.get("GEMINI_API_KEY", "")
+    API_KEYS = [key] if key else []
+if not API_KEYS:
+    raise RuntimeError("No GEMINI_API_KEY or GEMINI_API_KEY_N environment variables found")
+
+_clients = [genai.Client(api_key=k) for k in API_KEYS]
+_client_cycle = itertools.cycle(_clients)
+_client_lock = threading.Lock()
+
+def get_client():
+    with _client_lock:
+        return next(_client_cycle)
 
 MAX_CONCURRENT_ANALYSES = 2
 ANALYSIS_REQUESTS_PER_MINUTE = 15
@@ -93,7 +110,7 @@ async def extract_label_from_images(image_dir=IMAGE_DIR, verbose=True):
     crops it, and extracts data.
     Returns (best_data, best_img_path, cropped_img_path)
     """
-    client = genai.Client()
+    client = get_client()
 
     if not image_dir.exists():
         if verbose: print(f"Error: {image_dir} not found.", file=sys.stderr)

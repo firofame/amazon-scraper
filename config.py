@@ -5,7 +5,7 @@ BASE_DIR = Path(__file__).parent.resolve()
 IMAGE_DIR = BASE_DIR / "images"
 STICKER_DIR = BASE_DIR / "verified_labels"
 DATA_FILE = BASE_DIR / "amazon_products.json"
-PROFILE_DIR = Path.home() / ".camoufox-profile"
+PROFILE_DIR = Path.home() / ".cloakbrowser-profile"
 
 # Browser Settings
 WINDOW_SIZE = (1100, 700)
@@ -13,8 +13,8 @@ HEADLESS = True
 PARALLEL_PAGES = 2  # Concurrent browser pages for bulk verification
 
 # Extraction Settings
-MODEL_ID = "gemma-4-31b-it" 
-VISION_ENABLED = True  # Set to False to skip image analysis and save time/cost
+MODEL_ID = "gemini-3.1-flash-lite" 
+VISION_ENABLED = False  # Set to False to skip image analysis and save time/cost
 MAX_IMAGES_PER_PRODUCT = None # Set to None to download all available images
 SAVE_INTERVAL = 1 # Save progress to JSON after this many products
 

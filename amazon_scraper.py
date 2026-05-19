@@ -164,7 +164,7 @@ async def main():
             print("All products already have specs!")
             return
         
-        async with await get_browser_context() as context:
+        async with get_browser_context() as context:
             page = await context.new_page()
             total = len(to_scrape)
             for i, product in enumerate(to_scrape):
@@ -186,7 +186,7 @@ async def main():
         return
 
     # Full mode: scrape listings + specs
-    async with await get_browser_context() as context:
+    async with get_browser_context() as context:
         page = await context.new_page()
 
         # Step 1: Scrape listings

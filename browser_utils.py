@@ -1,19 +1,24 @@
 import asyncio
 import random
-from camoufox.async_api import AsyncCamoufox
+from contextlib import asynccontextmanager
+from cloakbrowser import launch_persistent_context_async
 from config import PROFILE_DIR, WINDOW_SIZE, HEADLESS
 
+@asynccontextmanager
 async def get_browser_context():
     """
-    Returns an AsyncCamoufox context manager with standard settings.
+    Returns a CloakBrowser context manager with standard settings.
     """
-    return AsyncCamoufox(
+    context = await launch_persistent_context_async(
         headless=HEADLESS,
-        persistent_context=True,
         user_data_dir=str(PROFILE_DIR),
-        window=WINDOW_SIZE,
-        firefox_user_prefs={'media.volume_scale': '0.0'}
+        viewport={'width': WINDOW_SIZE[0], 'height': WINDOW_SIZE[1]},
+        args=['--mute-audio']
     )
+    try:
+        yield context
+    finally:
+        await context.close()
 
 async def human_wiggle(page, element):
     """
