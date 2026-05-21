@@ -17,6 +17,7 @@ MODEL_ID = "gemini-3.1-flash-lite"
 VISION_ENABLED = False  # Set to False to skip image analysis and save time/cost
 MAX_IMAGES_PER_PRODUCT = None # Set to None to download all available images
 SAVE_INTERVAL = 1 # Save progress to JSON after this many products
+MAX_PAGES = 3  # Maximum search result pages to scrape (set to None for all)
 
 # Amazon Selectors (Commonly reused)
 SELECTORS = {

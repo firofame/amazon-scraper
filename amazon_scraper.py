@@ -3,9 +3,9 @@ import json
 import re
 import sys
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, parse_qs
 from browser_utils import get_browser_context
-from config import SELECTORS, TABLE_RULES, DATA_FILE, VISION_ENABLED, IMAGE_DIR, MAX_IMAGES_PER_PRODUCT, SAVE_INTERVAL
+from config import SELECTORS, TABLE_RULES, BASE_DIR, VISION_ENABLED, IMAGE_DIR, MAX_IMAGES_PER_PRODUCT, SAVE_INTERVAL, MAX_PAGES
 from downloader import download_product_images
 from extractor import extract_label_from_images
 
@@ -14,14 +14,37 @@ SEARCH_URL = (
 )
 
 
-async def scrape_listings(page):
-    """Scrape product cards from all search results pages."""
+def get_data_file(url):
+    """Derive a unique JSON filename from the search URL."""
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    parts = []
+    keyword = params.get("k", [""])[0]
+    if keyword:
+        parts.append(re.sub(r'[^\w\-]', '_', keyword).strip('_'))
+    seller = params.get("me", [""])[0]
+    if seller:
+        parts.append(seller)
+    suffix = "_".join(parts) if parts else "default"
+    return BASE_DIR / f"amazon_products_{suffix}.json"
+
+
+async def scrape_listings(page, existing_asins=None):
+    """Scrape product cards from all search results pages.
+    
+    Args:
+        existing_asins: Set of ASINs already in the dataset (skipped during scrape).
+    """
+    if existing_asins is None:
+        existing_asins = set()
     products = []
+    new_count = 0
     page_count = 1
+    max_pages = MAX_PAGES or 999  # None means unlimited
 
     await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=60000)
     
-    while page_count <= 3:
+    while page_count <= max_pages:
         print(f"\n--- Scraping Page {page_count} ---")
         try:
             await page.wait_for_selector(SELECTORS["search_result"], timeout=15000)
@@ -36,6 +59,8 @@ async def scrape_listings(page):
             try:
                 asin = await result.get_attribute("data-asin")
                 if not asin:
+                    continue
+                if asin in existing_asins:
                     continue
 
                 title_el = await result.query_selector("h2 span, h2")
@@ -60,6 +85,7 @@ async def scrape_listings(page):
                     reviews = "0"
 
                 if price != "N/A":
+                    new_count += 1
                     products.append({
                         "asin": asin,
                         "title": title.strip(),
@@ -82,7 +108,8 @@ async def scrape_listings(page):
             break
 
     unique = list({p["asin"]: p for p in products}.values())
-    print(f"\nTotal: {len(unique)} unique products from search results.")
+    skipped = len(existing_asins)
+    print(f"\nTotal: {len(unique)} new products ({skipped} existing skipped).")
     return unique
 
 
@@ -151,14 +178,21 @@ async def extract_specs(page, product, index, total):
 
 async def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "full"
+    data_file = get_data_file(SEARCH_URL)
 
-    if mode == "specs-only" and DATA_FILE.exists():
-        # Skip listing scrape, just load existing and extract specs
-        with open(DATA_FILE, "r") as f:
-            products = json.load(f)
-        # Filter to those missing specs
-        to_scrape = [p for p in products if not p.get("specs")]
-        print(f"Loaded {len(products)} products, {len(to_scrape)} missing specs.")
+    # Load existing data if available
+    existing_products = []
+    if data_file.exists():
+        with open(data_file, "r") as f:
+            existing_products = json.load(f)
+        print(f"📂 Loaded {len(existing_products)} existing products from {data_file.name}")
+
+    existing_map = {p["asin"]: p for p in existing_products}
+
+    if mode == "specs-only":
+        # Skip listing scrape, just extract specs for products missing them
+        to_scrape = [p for p in existing_products if not p.get("specs")]
+        print(f"{len(to_scrape)} products missing specs.")
         
         if not to_scrape:
             print("All products already have specs!")
@@ -173,46 +207,61 @@ async def main():
                 
                 # Save progress incrementally
                 if (i + 1) % SAVE_INTERVAL == 0:
-                    with open(DATA_FILE, "w") as f:
-                        json.dump(products, f, indent=4, ensure_ascii=False)
+                    with open(data_file, "w") as f:
+                        json.dump(existing_products, f, indent=4, ensure_ascii=False)
                     print(f"  💾 Progress saved ({i+1}/{total})")
                 
                 await asyncio.sleep(1)
             
             # Final save
-            with open(DATA_FILE, "w") as f:
-                json.dump(products, f, indent=4, ensure_ascii=False)
-            print(f"\n✅ Updated {DATA_FILE.name}")
+            with open(data_file, "w") as f:
+                json.dump(existing_products, f, indent=4, ensure_ascii=False)
+            print(f"\n✅ Updated {data_file.name}")
         return
 
-    # Full mode: scrape listings + specs
+    # Full/resume mode: scrape listings + specs
     async with get_browser_context() as context:
         page = await context.new_page()
 
-        # Step 1: Scrape listings
-        products = await scrape_listings(page)
+        # Step 1: Scrape listings (skipping existing ASINs)
+        existing_asins = set(existing_map.keys())
+        new_products = await scrape_listings(page, existing_asins=existing_asins)
 
-        # Step 2: Extract specs one by one
-        total = len(products)
-        print(f"\n{'='*50}")
-        print(f"Extracting specs from {total} product pages (sequential)...")
-        print(f"{'='*50}\n")
+        # Merge: existing products + new products
+        all_products = existing_products + new_products
 
-        for i, product in enumerate(products):
-            print(f"[{i+1}/{total}]", end="", flush=True)
-            await extract_specs(page, product, i + 1, total)
-            # Save progress incrementally
-            if (i + 1) % SAVE_INTERVAL == 0:
-                with open(DATA_FILE, "w") as f:
-                    json.dump(products, f, indent=4, ensure_ascii=False)
-                print(f"  💾 Progress saved ({i+1}/{total})")
-            await asyncio.sleep(1)
+        if not new_products:
+            print("No new products found.")
+            # Still extract specs for any that are missing
+            to_scrape = [p for p in all_products if not p.get("specs")]
+        else:
+            # Only extract specs for new products + any existing ones missing specs
+            to_scrape = [p for p in all_products if not p.get("specs")]
+
+        # Step 2: Extract specs for products that need them
+        total = len(to_scrape)
+        if total > 0:
+            print(f"\n{'='*50}")
+            print(f"Extracting specs from {total} product pages (sequential)...")
+            print(f"{'='*50}\n")
+
+            for i, product in enumerate(to_scrape):
+                print(f"[{i+1}/{total}]", end="", flush=True)
+                await extract_specs(page, product, i + 1, total)
+                # Save progress incrementally
+                if (i + 1) % SAVE_INTERVAL == 0:
+                    with open(data_file, "w") as f:
+                        json.dump(all_products, f, indent=4, ensure_ascii=False)
+                    print(f"  💾 Progress saved ({i+1}/{total})")
+                await asyncio.sleep(1)
+        else:
+            print("\nAll products already have specs!")
 
         # Final save
-        with open(DATA_FILE, "w") as f:
-            json.dump(products, f, indent=4, ensure_ascii=False)
+        with open(data_file, "w") as f:
+            json.dump(all_products, f, indent=4, ensure_ascii=False)
 
-        print(f"\n✅ Saved {len(products)} products to {DATA_FILE.name}")
+        print(f"\n✅ Saved {len(all_products)} products to {data_file.name}")
 
 
 if __name__ == "__main__":
