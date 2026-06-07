@@ -33,7 +33,7 @@ amazon_products.json → The final dataset (Hybrid: HTML + Vision data)
 | `config.py` | Centralized settings: Selectors, `TABLE_RULES`, and `VISION_ENABLED` toggle. |
 | `downloader.py` | "Modal-First" gallery strategy. Clicks thumbnails to capture `_SL1500_` URLs. |
 | `extractor.py` | Generic Vision-AI module. Sends images to Gemini to read labels/spec sheets. |
-| `browser_utils.py` | Playwright/Camoufox wrapper for stealth and reliability. |
+| `browser_utils.py` | Custom Chrome DevTools Protocol (CDP) client connecting to your browser on port 9222. |
 | `amazon_products.json` | The resulting product database. |
 
 ---
@@ -41,17 +41,34 @@ amazon_products.json → The final dataset (Hybrid: HTML + Vision data)
 ## Setup
 
 1. **Install dependencies**:
+   Set up the virtual environment and install packages:
    ```bash
-   pip install google-genai camoufox playwright Pillow
-   python -m camoufox fetch
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
    ```
 
-2. **Set API Key**:
+2. **Start Microsoft Edge / Chrome with Remote Debugging**:
+   The scraper connects to an existing browser session on port `9222`. Open a browser with remote debugging enabled:
+   
+   * **Headed Mode** (Recommended for anti-bot bypass):
+     ```bash
+     flatpak run com.microsoft.Edge --remote-debugging-port=9222
+     ```
+     *(Or if installed natively: `microsoft-edge-stable --remote-debugging-port=9222`)*
+
+   * **Headless Mode** (To run fully in the background):
+     ```bash
+     flatpak run com.microsoft.Edge --headless --remote-debugging-port=9222
+     ```
+     *(Or if installed natively: `microsoft-edge-stable --headless --remote-debugging-port=9222`)*
+
+3. **Set API Key**:
    ```bash
-   export GOOGLE_API_KEY="your_gemini_api_key"
+   export GEMINI_API_KEY="your_gemini_api_key"
    ```
 
-3. **Configure Search**:
+4. **Configure Search**:
    Update the `SEARCH_URL` in `amazon_scraper.py` to your target category.
 
 ---
@@ -59,6 +76,9 @@ amazon_products.json → The final dataset (Hybrid: HTML + Vision data)
 ## Usage
 
 ```bash
+# Activate virtual environment
+source venv/bin/activate
+
 # Run the full hybrid scrape
 python3 amazon_scraper.py
 
@@ -72,4 +92,3 @@ python3 amazon_scraper.py specs-only
 
 - **`VISION_ENABLED`**: Set to `True` to perform AI image analysis.
 - **`TABLE_RULES`**: A list of CSS selectors and parsing rules to extract specifications from various Amazon table layouts.
-- **`HEADLESS`**: Set to `False` to watch the browser in action.
