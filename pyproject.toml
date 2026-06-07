@@ -1,0 +1,17 @@
+[project]
+name = "amazon-scraper"
+version = "0.1.0"
+description = "A generic Amazon scraper using Playwright"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "playwright>=1.60.0",
+    "python-dotenv>=1.2.2",
+]
+
+[project.scripts]
+amazon-scraper = "amazon_scraper.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
