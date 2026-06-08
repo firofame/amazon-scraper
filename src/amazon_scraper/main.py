@@ -5,7 +5,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
-from urllib.parse import urljoin, urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs
 from playwright.async_api import Page
 
 from amazon_scraper.browser import get_browser_context
@@ -75,10 +75,8 @@ async def scrape_listings(page: Page) -> list[dict]:
                 title_el = result.locator("h2 span, h2").first
                 title = await title_el.inner_text() if await title_el.count() > 0 else "N/A"
 
-                # Link extraction
-                link_el = result.locator("h2 a, .a-link-normal.s-no-outline").first
-                href = await link_el.get_attribute("href") if await link_el.count() > 0 else None
-                url = urljoin("https://www.amazon.in", href.split("?")[0]) if href else "N/A"
+                # Canonical URL construction
+                url = f"https://www.amazon.in/dp/{asin}"
 
                 # Price extraction
                 price_el = result.locator(".a-price-whole").first
@@ -127,7 +125,8 @@ async def scrape_listings(page: Page) -> list[dict]:
 async def extract_specs(page: Page, product: dict, index: int, total: int) -> dict:
     """Extract specification tables and bullet points from the product page."""
     asin = product["asin"]
-    url = product["url"]
+    url = f"https://www.amazon.in/dp/{asin}"
+    product["url"] = url
     specs = {}
 
     try:
