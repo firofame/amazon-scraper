@@ -16,13 +16,13 @@ CDP_URL = os.getenv("CDP_URL", "http://127.0.0.1:9222")
 
 # Scraper Configurations
 SAVE_INTERVAL = 1
-MAX_PAGES = 3
+MAX_PAGES = int(os.getenv("MAX_PAGES")) if os.getenv("MAX_PAGES") else None
 
 # Amazon Selectors
 SELECTORS = {
     "search_result": "[data-component-type='s-search-result']",
     "next_page": ".s-pagination-next:not(.s-pagination-disabled)",
-    "feature_bullets": "#feature-bullets li span, .a-list-item"
+    "feature_bullets": "#feature-bullets li span, #feature-bullets .a-list-item"
 }
 
 # Extraction Strategies (Table layouts for technical details)

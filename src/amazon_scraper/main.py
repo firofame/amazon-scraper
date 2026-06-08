@@ -143,7 +143,14 @@ async def extract_specs(page: Page, product: dict, index: int, total: int) -> di
                 if await k_el.count() > 0 and await v_el.count() > 0:
                     key = (await k_el.inner_text()).strip().rstrip(" \u200f:").replace("\u200e", "").strip()
                     val = (await v_el.inner_text()).strip().replace("\u200e", "").strip()
-                    if key and val and key != val and key not in specs:
+                    if (
+                        key 
+                        and val 
+                        and key != val 
+                        and key not in specs
+                        and key.lower() != "customer reviews"
+                        and not any(js_sig in val for js_sig in ["P.when", "function(", "var ", "const ", "let "])
+                    ):
                         specs[key] = val
 
         # Step 2: Feature Bullets
