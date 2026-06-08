@@ -45,11 +45,8 @@ def save_json_atomically(data_path: Path, data: list):
         temp_name = tf.name
     Path(temp_name).replace(data_path)
 
-async def scrape_listings(page: Page, existing_asins: set[str] = None) -> list[dict]:
+async def scrape_listings(page: Page) -> list[dict]:
     """Scrape product cards from all search results pages."""
-    if existing_asins is None:
-        existing_asins = set()
-    
     products = []
     page_count = 1
     max_pages = MAX_PAGES or 999
@@ -72,8 +69,6 @@ async def scrape_listings(page: Page, existing_asins: set[str] = None) -> list[d
             try:
                 asin = await result.get_attribute("data-asin")
                 if not asin:
-                    continue
-                if asin in existing_asins:
                     continue
 
                 # Title extraction
@@ -126,7 +121,7 @@ async def scrape_listings(page: Page, existing_asins: set[str] = None) -> list[d
             break
 
     unique = list({p["asin"]: p for p in products}.values())
-    logger.info(f"Total new products scraped: {len(unique)} ({len(existing_asins)} skipped)")
+    logger.info(f"Total products found in search: {len(unique)}")
     return unique
 
 async def extract_specs(page: Page, product: dict, index: int, total: int) -> dict:
@@ -214,9 +209,22 @@ async def run_scraper():
             return
 
         # Full mode
-        existing_asins = set(existing_map.keys())
-        new_products = await scrape_listings(page, existing_asins=existing_asins)
-        all_products = existing_products + new_products
+        active_products = await scrape_listings(page)
+        
+        # Merge basic details from current scrape with existing specs
+        all_products = []
+        for p in active_products:
+            asin = p["asin"]
+            if asin in existing_map:
+                existing_p = existing_map[asin]
+                p["specs"] = existing_p.get("specs", {})
+            all_products.append(p)
+
+        # Log which products were removed
+        active_asins = {p["asin"] for p in active_products}
+        removed_asins = [asin for asin in existing_map if asin not in active_asins]
+        if removed_asins:
+            logger.info(f"Removing {len(removed_asins)} products that are no longer in search results: {', '.join(removed_asins)}")
 
         to_scrape = [p for p in all_products if not p.get("specs")]
         total = len(to_scrape)
