@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import logging
@@ -45,14 +46,13 @@ def save_json_atomically(data_path: Path, data: list):
         temp_name = tf.name
     Path(temp_name).replace(data_path)
 
-async def scrape_listings(page: Page) -> list[dict]:
+async def scrape_listings(page: Page, search_url: str, max_pages: int = 999) -> list[dict]:
     """Scrape product cards from all search results pages."""
     products = []
     page_count = 1
-    max_pages = MAX_PAGES or 999
 
-    logger.info(f"Navigating to search URL: {SEARCH_URL}")
-    await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=60000)
+    logger.info(f"Navigating to search URL: {search_url}")
+    await page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
 
     while page_count <= max_pages:
         logger.info(f"--- Scraping Page {page_count} ---")
@@ -175,9 +175,8 @@ async def extract_specs(page: Page, product: dict, index: int, total: int) -> di
 
     return product
 
-async def run_scraper():
-    mode = sys.argv[1] if len(sys.argv) > 1 else "full"
-    data_file = get_data_file(SEARCH_URL)
+async def run_scraper(mode: str = "full", search_url: str = SEARCH_URL, max_pages: int = 999):
+    data_file = get_data_file(search_url)
 
     # Load existing database
     existing_products = []
@@ -215,7 +214,7 @@ async def run_scraper():
             return
 
         # Full mode
-        active_products = await scrape_listings(page)
+        active_products = await scrape_listings(page, search_url, max_pages)
         
         # Merge basic details from current scrape with existing specs
         all_products = []
@@ -250,8 +249,16 @@ async def run_scraper():
         logger.info(f"✅ Saved {len(all_products)} products to {data_file.name}")
 
 def main():
+    parser = argparse.ArgumentParser(description="Amazon Search and Product Spec Scraper")
+    parser.add_argument("mode", nargs="?", default="full", choices=["full", "specs-only"], help="Scraping mode")
+    parser.add_argument("--url", type=str, default=SEARCH_URL, help="Amazon search results URL to scrape")
+    parser.add_argument("--pages", type=int, default=None, help="Number of pages to scrape")
+    args = parser.parse_args()
+
+    max_pages = args.pages if args.pages is not None else (MAX_PAGES or 999)
+
     try:
-        asyncio.run(run_scraper())
+        asyncio.run(run_scraper(mode=args.mode, search_url=args.url, max_pages=max_pages))
     except KeyboardInterrupt:
         logger.info("Scraper interrupted by user.")
     except Exception as e:

@@ -10,9 +10,8 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 DATA_FILE = BASE_DIR / "amazon_products.json"
 
 # Browser Settings
-# Set HEADLESS=False in your environment or here to connect to your Edge browser on port 9222
+# Set HEADLESS=False in your environment to launch a local headful browser window
 HEADLESS = os.getenv("HEADLESS", "True").lower() == "true"
-CDP_URL = os.getenv("CDP_URL", "http://127.0.0.1:9222")
 
 # Scraper Configurations
 SAVE_INTERVAL = 1
