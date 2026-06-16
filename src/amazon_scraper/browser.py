@@ -21,6 +21,15 @@ async def get_browser_context():
                 viewport={"width": 1280, "height": 800},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
+            
+            # Optimize loading speed and save bandwidth by blocking heavy/unnecessary resources
+            async def block_resources(route):
+                if route.request.resource_type in ["image", "stylesheet", "media", "font"]:
+                    await route.abort()
+                else:
+                    await route.continue_()
+            await context.route("**/*", block_resources)
+
             yield context
             await browser.close()
         except Exception as e:

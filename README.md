@@ -1,6 +1,6 @@
 # Amazon HTML Scraper
 
-A generic, configuration-driven HTML scraper designed to extract technical specifications and feature bullets from Amazon product pages into a structured JSON database. It connects to your active browser session on port `9222` to seamlessly bypass anti-bot systems.
+A generic, configuration-driven HTML scraper designed to extract technical specifications and feature bullets from Amazon product pages into a structured JSON database. It launches a Chromium browser using Playwright with custom desktop user-agent settings to browse pages and seamlessly extract data.
 
 ---
 
@@ -11,7 +11,7 @@ uv run amazon-scraper    → Scrapes Amazon search results
   └─ src/
       └─ amazon_scraper/
           ├─ main.py     → Orchestrates the search and extraction loop
-          ├─ browser.py  → Connects to Edge/Chrome via native Playwright CDP
+          ├─ browser.py  → Launches Playwright Chromium with custom headers/User-Agent
           └─ config.py   → Selectors, table rules, and search page config
 ```
 
@@ -19,10 +19,11 @@ uv run amazon-scraper    → Scrapes Amazon search results
 
 ## Key Features
 
-- **Generic Extraction**: No hardcoded product spec fields. It parses data using `TABLE_RULES` in `src/amazon_scraper/config.py` to extract all key-value specifications found on target pages.
-- **Anti-Bot Bypass**: Connects to an existing, authenticated browser instance on port `9222` using native Playwright Chromium CDP.
-- **Modern Python Standards**: Built as an installable package using `pyproject.toml` and managed with `uv`.
+- **Generic Extraction**: No hardcoded product spec fields. It parses data using `TABLE_RULES` in [config.py](src/amazon_scraper/config.py) to extract all key-value specifications found on target pages.
+- **Dynamic Output Filenames**: Automatically extracts the search query (`k`) and seller ID (`me`) from the search URL to save results in distinct JSON files (e.g., `amazon_products_ac_A3K8GDUW67973J.json`).
 - **Atomic File Saving**: Progress is saved atomically during the run, eliminating the risk of database corruption if the scraper is interrupted.
+- **Resilient Navigation & Extraction**: Uses customizable table extraction rules to parse specifications from various Amazon product layouts.
+- **Modern Python Standards**: Built as an installable package using `pyproject.toml` and managed with `uv`.
 
 ---
 
@@ -33,21 +34,21 @@ uv run amazon-scraper    → Scrapes Amazon search results
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. **Start Microsoft Edge / Chrome with Remote Debugging Enabled**:
-   The scraper connects to your running browser session on port `9222`. Open the browser via terminal:
-   
-   * **Microsoft Edge (Flatpak)**:
-     ```bash
-     flatpak run com.microsoft.Edge --remote-debugging-port=9222
-     ```
-   * **Microsoft Edge (Native)**:
-     ```bash
-     microsoft-edge-stable --remote-debugging-port=9222
-     ```
-   * **Chrome**:
-     ```bash
-     google-chrome --remote-debugging-port=9222
-     ```
+2. **Install Playwright Browsers**:
+   The scraper utilizes Playwright. Install the required Chromium browser using:
+   ```bash
+   uv run playwright install chromium
+   ```
+
+3. **Configure Environment Variables (Optional)**:
+   Create a `.env` file in the root directory:
+   ```env
+   # Set to False to view the browser window while scraping
+   HEADLESS=True
+
+   # Default maximum search result pages to scan
+   MAX_PAGES=5
+   ```
 
 ---
 
@@ -55,18 +56,38 @@ uv run amazon-scraper    → Scrapes Amazon search results
 
 You do not need to activate any virtual environments manually; `uv` handles everything transparently:
 
+### Scrape a Search URL
+
 ```bash
 # Run the full scraper (listings scan + spec extraction)
-uv run amazon-scraper
+uv run amazon-scraper --url "https://www.amazon.in/s?k=ac&me=A3K8GDUW67973J"
 
-# Extract missing specs for products already in your JSON database
+# Limit the number of pages to scrape
+uv run amazon-scraper --url "https://www.amazon.in/s?k=aa+battery" --pages 2
+
+# Run with the default search URL (configured in main.py)
+uv run amazon-scraper
+```
+
+### Resume/Extract Missing Specs Only
+
+If you already have a product database but some products are missing technical specifications, you can fetch only the specs:
+
+```bash
+# Fetch missing specs for the default database
 uv run amazon-scraper specs-only
+
+# Fetch missing specs for a custom search database
+uv run amazon-scraper specs-only --url "https://www.amazon.in/s?k=aa+battery"
 ```
 
 ---
 
 ## Configuration (`src/amazon_scraper/config.py`)
 
-- **`MAX_PAGES`**: Maximum search result pages to scan.
-- **`SAVE_INTERVAL`**: Save progress to the JSON file after every $N$ scraped products.
+- **`HEADLESS`**: Set via `HEADLESS` environment variable (defaults to `True`). Controls whether Chromium runs headlessly or headfully.
+- **`MAX_PAGES`**: Default maximum pages to scan. Set via `MAX_PAGES` environment variable (defaults to `None`/no limit if not set).
+- **`SAVE_INTERVAL`**: How often progress is saved to the JSON file (defaults to `1` product).
 - **`TABLE_RULES`**: List of target CSS selectors and rules used to extract tabular technical details from Amazon's different layout styles.
+- **`SELECTORS`**: Base selectors for finding search result items, next page links, and product feature bullet points.
+

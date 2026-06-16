@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import json
 import logging
+import random
 import re
 import sys
 import tempfile
@@ -35,6 +36,13 @@ def get_data_file(url: str) -> Path:
     seller = params.get("me", [""])[0]
     if seller:
         parts.append(seller)
+    if not parts:
+        rh = params.get("rh", [""])[0]
+        if rh:
+            rh_clean = re.sub(r'[^\w\-]', '_', rh).strip('_')
+            rh_clean = re.sub(r'_+', '_', rh_clean)
+            if rh_clean:
+                parts.append(rh_clean)
     suffix = "_".join(parts) if parts else "default"
     return BASE_DIR / f"amazon_products_{suffix}.json"
 
@@ -175,7 +183,40 @@ async def extract_specs(page: Page, product: dict, index: int, total: int) -> di
 
     return product
 
-async def run_scraper(mode: str = "full", search_url: str = SEARCH_URL, max_pages: int = 999):
+async def extract_specs_parallel(context, products: list, to_scrape: list, data_file: Path, concurrency: int):
+    """Extract specs for to_scrape products in parallel using multiple pages in context."""
+    total = len(to_scrape)
+    if total == 0:
+        logger.info("All products already have specs!")
+        return
+
+    logger.info(f"Extracting specs from {total} products in parallel (concurrency={concurrency})...")
+    sem = asyncio.Semaphore(concurrency)
+    save_lock = asyncio.Lock()
+    completed = 0
+
+    async def scrape_one(product, index):
+        nonlocal completed
+        async with sem:
+            # Stagger launch slightly to avoid spike in resource/network usage
+            await asyncio.sleep(random.uniform(0.1, 0.8))
+            p_page = await context.new_page()
+            try:
+                await extract_specs(p_page, product, index, total)
+                # Small wait to mimic human read time before closing tab
+                await asyncio.sleep(random.uniform(0.5, 1.2))
+            finally:
+                await p_page.close()
+        
+        async with save_lock:
+            completed += 1
+            if completed % SAVE_INTERVAL == 0:
+                save_json_atomically(data_file, products)
+                logger.info(f"Progress saved ({completed}/{total})")
+
+    await asyncio.gather(*(scrape_one(p, i + 1) for i, p in enumerate(to_scrape)))
+
+async def run_scraper(mode: str = "full", search_url: str = SEARCH_URL, max_pages: int = 999, concurrency: int = 5):
     data_file = get_data_file(search_url)
 
     # Load existing database
@@ -191,30 +232,19 @@ async def run_scraper(mode: str = "full", search_url: str = SEARCH_URL, max_page
     existing_map = {p["asin"]: p for p in existing_products}
 
     async with get_browser_context() as context:
-        page = await context.new_page()
-
         if mode == "specs-only":
             to_scrape = [p for p in existing_products if not p.get("specs")]
-            total = len(to_scrape)
-            logger.info(f"{total} products missing specs.")
-
-            if not to_scrape:
-                logger.info("All products already have specs!")
-                return
-
-            for i, product in enumerate(to_scrape):
-                await extract_specs(page, product, i + 1, total)
-                if (i + 1) % SAVE_INTERVAL == 0:
-                    save_json_atomically(data_file, existing_products)
-                    logger.info(f"Progress saved ({i+1}/{total})")
-                await asyncio.sleep(1)
-
+            await extract_specs_parallel(context, existing_products, to_scrape, data_file, concurrency)
             save_json_atomically(data_file, existing_products)
             logger.info(f"✅ Updated {data_file.name}")
             return
 
         # Full mode
-        active_products = await scrape_listings(page, search_url, max_pages)
+        page = await context.new_page()
+        try:
+            active_products = await scrape_listings(page, search_url, max_pages)
+        finally:
+            await page.close()
         
         # Merge basic details from current scrape with existing specs
         all_products = []
@@ -232,18 +262,7 @@ async def run_scraper(mode: str = "full", search_url: str = SEARCH_URL, max_page
             logger.info(f"Removing {len(removed_asins)} products that are no longer in search results: {', '.join(removed_asins)}")
 
         to_scrape = [p for p in all_products if not p.get("specs")]
-        total = len(to_scrape)
-
-        if total > 0:
-            logger.info(f"Extracting specs from {total} products...")
-            for i, product in enumerate(to_scrape):
-                await extract_specs(page, product, i + 1, total)
-                if (i + 1) % SAVE_INTERVAL == 0:
-                    save_json_atomically(data_file, all_products)
-                    logger.info(f"Progress saved ({i+1}/{total})")
-                await asyncio.sleep(1)
-        else:
-            logger.info("All products already have specs!")
+        await extract_specs_parallel(context, all_products, to_scrape, data_file, concurrency)
 
         save_json_atomically(data_file, all_products)
         logger.info(f"✅ Saved {len(all_products)} products to {data_file.name}")
@@ -253,12 +272,13 @@ def main():
     parser.add_argument("mode", nargs="?", default="full", choices=["full", "specs-only"], help="Scraping mode")
     parser.add_argument("--url", type=str, default=SEARCH_URL, help="Amazon search results URL to scrape")
     parser.add_argument("--pages", type=int, default=None, help="Number of pages to scrape")
+    parser.add_argument("--concurrency", "-c", type=int, default=5, help="Number of parallel browser tabs for spec extraction")
     args = parser.parse_args()
 
     max_pages = args.pages if args.pages is not None else (MAX_PAGES or 999)
 
     try:
-        asyncio.run(run_scraper(mode=args.mode, search_url=args.url, max_pages=max_pages))
+        asyncio.run(run_scraper(mode=args.mode, search_url=args.url, max_pages=max_pages, concurrency=args.concurrency))
     except KeyboardInterrupt:
         logger.info("Scraper interrupted by user.")
     except Exception as e:
